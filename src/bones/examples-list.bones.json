@@ -1,0 +1,14 @@
+{
+  "breakpoints": {
+    "375": {
+      "name": "examples-list",
+      "viewportWidth": 309,
+      "width": 309,
+      "height": 84,
+      "bones": [
+        [0, 0, 100, 38, 10],
+        [0, 46, 100, 38, 10]
+      ]
+    }
+  }
+}
