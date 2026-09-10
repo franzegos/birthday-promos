@@ -4,8 +4,10 @@ import {
   formatEstimatedValue,
   formatRequirementItems,
   formatTimingSummary,
+  formatWhatYoullGetItems,
   getPromoDetailSections,
 } from "@/lib/promos/formatPromoDetails";
+import { allPromos } from "@/lib/promos/promoData";
 import type { BirthdayPromo } from "@/lib/promos/promo.types";
 
 const bakebePromo: BirthdayPromo = {
@@ -201,5 +203,98 @@ describe("formatPromoDetails", () => {
     expect(formatRequirementItems(cafeFrancePromo)).toContain(
       "Spend note: ₱800",
     );
+  });
+
+  it("avoids redundant exact-birthday and end-date timing lines", () => {
+    const barenaked = allPromos.find((promo) => promo.brand === "Barenaked");
+    const mitchSalon = allPromos.find((promo) => promo.brand === "Mitch Salon");
+
+    expect(formatTimingSummary(barenaked!)).toEqual([
+      "On your exact birthday only",
+      "No published end date",
+    ]);
+    expect(formatTimingSummary(mitchSalon!)).toEqual([
+      "On your exact birthday only",
+      "Until September 15, 2026",
+    ]);
+  });
+
+  it("keeps distinct timing bullets across all promos", () => {
+    for (const promo of allPromos) {
+      const items = formatTimingSummary(promo);
+      const lower = items.map((item) => item.toLowerCase());
+
+      expect(new Set(lower).size).toBe(lower.length);
+
+      if (lower.some((item) => /on your exact birthday/i.test(item))) {
+        expect(lower.filter((item) => item === "exact birthday")).toHaveLength(
+          0,
+        );
+      }
+
+      const untilLines = items.filter((item) => /^until /i.test(item));
+      expect(untilLines.length).toBeLessThanOrEqual(1);
+
+      const endDateMentions = items.filter((item) =>
+        /promo (?:posted through|end)\b/i.test(item),
+      );
+      if (untilLines.length === 1) {
+        expect(endDateMentions).toHaveLength(0);
+      }
+    }
+  });
+
+  it("avoids redundant percentage and worth lines in benefits", () => {
+    const barenaked = allPromos.find((promo) => promo.brand === "Barenaked");
+    const dermcare = allPromos.find((promo) => promo.brand === "Dermcare");
+    const layBare = allPromos.find(
+      (promo) => promo.brand === "Lay Bare (Laybare)",
+    );
+
+    expect(formatWhatYoullGetItems(barenaked!)).toEqual([
+      "50% off birthday promo",
+    ]);
+    expect(formatWhatYoullGetItems(dermcare!)).toEqual([
+      "30% off birthday promo",
+    ]);
+    expect(formatWhatYoullGetItems(layBare!)).toEqual([
+      "15% off birthday promo",
+    ]);
+  });
+
+  it("rewrites companion-heavy offers into celebrant-focused benefits", () => {
+    const mitchSalon = allPromos.find((promo) => promo.brand === "Mitch Salon");
+    const tala = allPromos.find((promo) =>
+      promo.brand.startsWith("Tala by Kyla"),
+    );
+    const greenhills = allPromos.find(
+      (promo) => promo.brand === "Greenhills Wellness",
+    );
+
+    expect(formatWhatYoullGetItems(mitchSalon!)).toEqual([
+      "Free service for the birthday celebrant",
+    ]);
+    expect(formatWhatYoullGetItems(tala!)).toEqual(["Birthday gift"]);
+    expect(formatWhatYoullGetItems(greenhills!)).toEqual([
+      "Free service upgrade",
+    ]);
+  });
+
+  it("keeps distinct benefit bullets across all promos", () => {
+    for (const promo of allPromos) {
+      const items = formatWhatYoullGetItems(promo);
+      const normalized = items.map((item) => item.toLowerCase());
+
+      expect(new Set(normalized).size).toBe(normalized.length);
+
+      const percentOnly = items.filter((item) =>
+        /^\d+%\s*off$/i.test(item.replace(/^worth\s+/i, "")),
+      );
+      const percentOffers = items.filter((item) => /%/.test(item));
+      if (percentOffers.length > 0) {
+        expect(percentOnly).toHaveLength(0);
+        expect(items.some((item) => /^worth\s+\d+%/i.test(item))).toBe(false);
+      }
+    }
   });
 });

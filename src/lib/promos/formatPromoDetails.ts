@@ -97,13 +97,102 @@ function mentionsWeekendsAndHolidays(text: string): boolean {
   return lower.includes("weekend") && lower.includes("holiday");
 }
 
-function shouldSkipTimingClause(clause: string, existing: string[]): boolean {
+function getPromoEndDate(value: string | null): Date | null {
+  const cleaned = cleanValue(value);
+  if (
+    !cleaned ||
+    cleaned.toLowerCase() === "ongoing" ||
+    !cleaned.includes("-")
+  ) {
+    return null;
+  }
+
+  const date = new Date(`${cleaned}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function extractDatesFromText(text: string): Date[] {
+  const dates: Date[] = [];
+
+  for (const match of text.matchAll(/\b(\d{4}-\d{2}-\d{2})\b/g)) {
+    const date = new Date(`${match[1]}T12:00:00`);
+    if (!Number.isNaN(date.getTime())) dates.push(date);
+  }
+
+  for (const match of text.matchAll(
+    /\b([A-Za-z]{3,9})\s+(\d{1,2})(?:,)?\s+(\d{4})\b/g,
+  )) {
+    const date = new Date(`${match[1]} ${match[2]}, ${match[3]} 12:00:00`);
+    if (!Number.isNaN(date.getTime())) dates.push(date);
+  }
+
+  return dates;
+}
+
+function isSameCalendarDay(left: Date, right: Date): boolean {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function textReferencesPromoEndDate(text: string, promoEndDate: Date): boolean {
+  return extractDatesFromText(text).some((date) =>
+    isSameCalendarDay(date, promoEndDate),
+  );
+}
+
+function hasExactBirthdaySummary(existing: string[]): boolean {
+  return existing.some((item) => /on your exact birthday/i.test(item));
+}
+
+function hasBirthMonthSummary(existing: string[]): boolean {
+  return existing.some((item) => /during your birth month/i.test(item));
+}
+
+function isBareExactBirthdayClause(clause: string): boolean {
+  if (/paying|adults|companions?|\d|lunch|dinner|month:/i.test(clause)) {
+    return false;
+  }
+
+  return /^exact birthday(?:\s+only)?(?:\s+(?:reported|implied(?:\s+in\s+.+)?|per\s+current\s+listing))?\.?$/i.test(
+    clause.trim(),
+  );
+}
+
+function isPromoEndAnnouncement(clause: string): boolean {
+  if (/^until /i.test(clause)) return false;
+
+  return (
+    /(?:promo\s+)?(?:posted\s+)?(?:through|until|ends?|end)\b/i.test(clause) ||
+    /^not available:\s*promo\s+end\b/i.test(clause)
+  );
+}
+
+function isMislabeledEndDateNote(text: string): boolean {
+  return /promo\s+end\b/i.test(text);
+}
+
+function shouldSkipTimingClause(
+  clause: string,
+  existing: string[],
+  promoEndDate: Date | null = null,
+): boolean {
   if (
     /^birth month$/i.test(clause) &&
     existing.some((item) =>
       /during your birth month|exact birthday/i.test(item),
     )
   ) {
+    return true;
+  }
+
+  if (isBareExactBirthdayClause(clause) && hasExactBirthdaySummary(existing)) {
+    return true;
+  }
+
+  if (/^birth month$/i.test(clause.trim()) && hasBirthMonthSummary(existing)) {
     return true;
   }
 
@@ -123,12 +212,35 @@ function shouldSkipTimingClause(clause: string, existing: string[]): boolean {
     return true;
   }
 
+  if (
+    promoEndDate &&
+    textReferencesPromoEndDate(clause, promoEndDate) &&
+    isPromoEndAnnouncement(clause)
+  ) {
+    return true;
+  }
+
+  if (
+    promoEndDate &&
+    /^until /i.test(clause) &&
+    existing.some(
+      (item) =>
+        /^until /i.test(item) && textReferencesPromoEndDate(item, promoEndDate),
+    )
+  ) {
+    return true;
+  }
+
   return false;
 }
 
-function appendUniqueTimingItems(target: string[], items: string[]) {
+function appendUniqueTimingItems(
+  target: string[],
+  items: string[],
+  promoEndDate: Date | null = null,
+) {
   for (const item of items) {
-    if (shouldSkipTimingClause(item, target)) continue;
+    if (shouldSkipTimingClause(item, target, promoEndDate)) continue;
     if (!target.some((existing) => existing === item)) {
       target.push(item);
     }
@@ -280,9 +392,104 @@ function splitNoteClauses(item: string): string[] {
     .filter((clause): clause is string => Boolean(clause));
 }
 
-function formatWorthLine(value: string | null): string | null {
+function extractPercentTokens(text: string): string[] {
+  return text.match(/\d+(?:\.\d+)?%/g) ?? [];
+}
+
+function normalizeBenefitForComparison(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/^worth\s+/i, "")
+    .replace(/\s+birthday\s+promo$/i, "")
+    .replace(/[^\w%–\-+]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function benefitsOverlap(left: string, right: string): boolean {
+  const normLeft = normalizeBenefitForComparison(left);
+  const normRight = normalizeBenefitForComparison(right);
+  if (!normLeft || !normRight) return false;
+  if (normLeft === normRight) return true;
+
+  const leftPercents = extractPercentTokens(left);
+  const rightPercents = extractPercentTokens(right);
+  if (
+    leftPercents.length > 0 &&
+    rightPercents.length > 0 &&
+    leftPercents.some((token) => rightPercents.includes(token))
+  ) {
+    const leftWithoutPercent = normLeft.replace(/\d+(?:\.\d+)?%/g, "").trim();
+    const rightWithoutPercent = normRight.replace(/\d+(?:\.\d+)?%/g, "").trim();
+    if (
+      !leftWithoutPercent ||
+      leftWithoutPercent === "off" ||
+      !rightWithoutPercent ||
+      rightWithoutPercent === "off"
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isRedundantBenefitItem(
+  candidate: string,
+  existing: string[],
+): boolean {
+  return existing.some((item) => benefitsOverlap(candidate, item));
+}
+
+function formatBenefitOffer(offer: string): string {
+  let text = offer.trim();
+
+  if (/^(\d+\s+)?free\s+birthday\s+celebrant\b/i.test(text)) {
+    return "Free service for the birthday celebrant";
+  }
+
+  const semicolonIndex = text.indexOf(";");
+  if (
+    semicolonIndex > 0 &&
+    /\d+\s+(?:full[- ]?paying|paying)/i.test(text.slice(semicolonIndex))
+  ) {
+    text = text.slice(0, semicolonIndex).trim();
+  }
+
+  text = text
+    .replace(
+      /\s+with\s+(?:\d+\s+)?(?:full[- ]?paying\s+)?(?:\d+\s+)?(?:adults?|guests?|companions?|paying\s+(?:adults?|guests?|companions?))(?:\s*\([^)]+\))?\.?$/i,
+      "",
+    )
+    .replace(/\s+when accompanied by\b.+$/i, "");
+
+  return text.trim();
+}
+
+function shouldIncludeWorthLine(
+  offer: string | null,
+  value: string | null,
+): boolean {
   const formatted = formatPesoAmount(value);
-  if (!formatted || formatted === "Varies") return null;
+  if (!formatted || formatted === "Varies") return false;
+  if (/%/.test(value ?? "")) return false;
+  if (!formatted.startsWith("₱")) return false;
+
+  const worthLine = `Worth ${formatted}`;
+  if (offer && benefitsOverlap(worthLine, offer)) return false;
+  if (offer && benefitsOverlap(formatted, offer)) return false;
+
+  return true;
+}
+
+function formatWorthLine(
+  offer: string | null,
+  value: string | null,
+): string | null {
+  if (!shouldIncludeWorthLine(offer, value)) return null;
+
+  const formatted = formatPesoAmount(value);
+  if (!formatted) return null;
   return `Worth ${formatted}`;
 }
 
@@ -302,7 +509,7 @@ function getExtraBenefitItems(
       if (isRedundantTimingNote(clause, timingItems, promo)) continue;
 
       const formatted = formatPesoInText(clause);
-      if (!items.includes(formatted)) {
+      if (!isRedundantBenefitItem(formatted, items)) {
         items.push(formatted);
       }
     }
@@ -318,20 +525,16 @@ export function formatWhatYoullGetItems(promo: BirthdayPromo): string[] {
 
   const offer = promo.offer?.trim();
   if (offer) {
-    items.push(offer);
+    items.push(formatBenefitOffer(offer));
   }
 
-  const worthLine = formatWorthLine(promo.offerValuePhpEst);
-  if (worthLine) {
+  const worthLine = formatWorthLine(offer ?? null, promo.offerValuePhpEst);
+  if (worthLine && !isRedundantBenefitItem(worthLine, items)) {
     items.push(worthLine);
   }
 
   for (const extra of getExtraBenefitItems(promo, timingItems, branches)) {
-    if (
-      !items.some(
-        (item) => item.toLowerCase() === extra.toLowerCase() || offer === extra,
-      )
-    ) {
+    if (!isRedundantBenefitItem(extra, items)) {
       items.push(extra);
     }
   }
@@ -344,6 +547,7 @@ export function formatTimingSummary(promo: BirthdayPromo): string[] {
   const branches = formatBranchList(promo.participatingBranches);
   const exactDay = isAffirmative(promo.exactBirthday);
   const birthMonth = isAffirmative(promo.birthMonth);
+  const promoEndDate = getPromoEndDate(promo.promoValidityEnd);
 
   if (exactDay && birthMonth) {
     items.push("On your exact birthday, or any day during your birth month");
@@ -360,23 +564,27 @@ export function formatTimingSummary(promo: BirthdayPromo): string[] {
         !isRedemptionConstraint(clause) &&
         !isLocationClause(clause, promo, branches),
     ),
+    promoEndDate,
   );
 
   const blackout = cleanValue(promo.blackoutDates);
   if (blackout) {
     appendUniqueTimingItems(
       items,
-      formatReadablePromoText(blackout).map((entry) =>
-        entry.toLowerCase().startsWith("not ")
-          ? entry
-          : `Not available: ${entry}`,
-      ),
+      formatReadablePromoText(blackout)
+        .filter((entry) => !isMislabeledEndDateNote(entry) || !promoEndDate)
+        .map((entry) =>
+          entry.toLowerCase().startsWith("not ")
+            ? entry
+            : `Not available: ${entry}`,
+        ),
+      promoEndDate,
     );
   }
 
   const validUntil = formatValidityEnd(promo.promoValidityEnd);
   if (validUntil) {
-    items.push(validUntil);
+    appendUniqueTimingItems(items, [validUntil], promoEndDate);
   }
 
   return items;
