@@ -71,9 +71,9 @@ export function PromoDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl max-sm:inset-x-0 max-sm:top-auto max-sm:bottom-0 max-sm:max-h-[92dvh] max-sm:w-full max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-b-none max-sm:rounded-t-3xl">
-        <div className="flex max-h-[min(90dvh,52rem)] flex-col max-sm:max-h-[92dvh]">
-          <DialogHeader className="shrink-0 items-center space-y-3 p-4 pb-3 text-center sm:p-6 sm:pb-4">
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl max-sm:inset-0 max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:ring-0 max-sm:shadow-none max-sm:data-open:slide-in-from-bottom max-sm:data-open:zoom-in-100 max-sm:data-closed:slide-out-to-bottom max-sm:[&_[data-slot=dialog-close]]:top-[max(1rem,env(safe-area-inset-top))]">
+        <div className="flex h-full min-h-0 flex-col sm:max-h-[min(90dvh,52rem)]">
+          <DialogHeader className="shrink-0 items-center space-y-3 border-b border-border/60 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] text-center sm:border-0 sm:p-6 sm:pb-4 sm:pt-6">
             <BrandLogo
               brand={promo.brand}
               officialSourceUrl={promo.officialSourceUrl}
@@ -106,7 +106,7 @@ export function PromoDetailDialog({
             </div>
           </DialogHeader>
 
-          <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4 sm:px-6">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
             {benefitsSection ? (
               <DetailSection
                 icon={Gift}
