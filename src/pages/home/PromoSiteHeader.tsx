@@ -54,13 +54,15 @@ export function PromoSiteHeader({
           </div>
         </div>
 
-        <div className="flex h-7 shrink-0 items-center justify-end gap-1.5 text-[11px] text-muted-foreground sm:justify-start">
-          <span className="whitespace-nowrap">
+        <div className="flex h-7 w-full shrink-0 items-center justify-between gap-2 text-[11px] text-muted-foreground sm:w-auto sm:justify-start sm:gap-3">
+          <div className="flex items-center gap-1.5">
+            <PromoSortSelect value={sort} onChange={onSortChange} />
+            <span aria-hidden className="h-4 w-px bg-border" />
+            <LocationToggle />
+          </div>
+          <span className="whitespace-nowrap tabular-nums">
             {resultCount} promo{resultCount === 1 ? "" : "s"}
           </span>
-          <PromoSortSelect value={sort} onChange={onSortChange} />
-          <span aria-hidden className="h-4 w-px bg-border" />
-          <LocationToggle />
         </div>
       </div>
 
